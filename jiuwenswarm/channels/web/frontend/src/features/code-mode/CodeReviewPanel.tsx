@@ -792,7 +792,7 @@ export function CodeReviewPanel({ project, sessionId, target = null, diffWatch, 
         </div>
       </div>
       {repoIsParentOfProject ? (
-        <div className=”code-review__notice” role=”status” data-testid=”code-mode-review-repo-parent-notice”>
+        <div className="code-review__notice" role="status" data-testid="code-mode-review-repo-parent-notice">
           {t('codeMode.review.repoParentNotice', { repoRoot })}
         </div>
       ) : null}
