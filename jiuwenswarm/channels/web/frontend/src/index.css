@@ -55,9 +55,19 @@ select {
   color: inherit;
 }
 
+/*
+ * Force visible text selection (especially on RDP where the subtle
+ * 12%-opacity variable was nearly invisible). Solid blue background
+ * with white text, !important to override any component-level rules.
+ */
 ::selection {
-  background: var(--color-action-primary-subtle);
-  color: var(--color-text-strong);
+  background: #2563eb !important;
+  color: #fff !important;
+}
+
+::-moz-selection {
+  background: #2563eb !important;
+  color: #fff !important;
 }
 
 /* Scrollbar styling */
