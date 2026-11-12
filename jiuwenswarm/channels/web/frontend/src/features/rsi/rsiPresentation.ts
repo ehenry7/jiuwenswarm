@@ -1,6 +1,7 @@
-﻿// RSI 纯展示函数：状态文案 / 节点状态色 / 分数格式化等。
+// RSI 纯展示函数：状态文案 / 节点状态色 / 分数格式化等。
 // 与数据层解耦，便于组件复用与单测。
 
+import i18n from '../../i18n';
 import type {
   RsiArtifactType,
   RsiNodeChange,
@@ -87,33 +88,33 @@ function clampText(value: string | null, max = 180): string | null {
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
 }
 
-const STAGE_LABELS: Record<string, string> = {
-  plan: '规划中',
-  planning: '规划中',
-  research: '调研中',
-  researching: '调研中',
-  survey: '调研中',
-  design: '设计中',
-  designing: '设计中',
-  implement: '实现中',
-  implementation: '实现中',
-  execute: '执行中',
-  execution: '执行中',
-  evaluate: '评测中',
-  evaluation: '评测中',
-  score: '评测中',
-  report: '撰写中',
-  reporting: '撰写中',
-  write: '撰写中',
-  writing: '撰写中',
-  paper_writing: '撰写中',
-  paper_generation: '撰写中',
-  compile: '编译校验中',
-  compiling: '编译校验中',
-  code_generation: '实现中',
-  program_generation: '实现中',
-  validate: '校验中',
-  validation: '校验中',
+const STAGE_LABEL_KEYS: Record<string, string> = {
+  plan: 'rsi.presentation.stage.plan',
+  planning: 'rsi.presentation.stage.plan',
+  research: 'rsi.presentation.stage.research',
+  researching: 'rsi.presentation.stage.research',
+  survey: 'rsi.presentation.stage.research',
+  design: 'rsi.presentation.stage.design',
+  designing: 'rsi.presentation.stage.design',
+  implement: 'rsi.presentation.stage.implement',
+  implementation: 'rsi.presentation.stage.implement',
+  execute: 'rsi.presentation.stage.execute',
+  execution: 'rsi.presentation.stage.execute',
+  evaluate: 'rsi.presentation.stage.evaluate',
+  evaluation: 'rsi.presentation.stage.evaluate',
+  score: 'rsi.presentation.stage.evaluate',
+  report: 'rsi.presentation.stage.report',
+  reporting: 'rsi.presentation.stage.report',
+  write: 'rsi.presentation.stage.report',
+  writing: 'rsi.presentation.stage.report',
+  paper_writing: 'rsi.presentation.stage.report',
+  paper_generation: 'rsi.presentation.stage.report',
+  compile: 'rsi.presentation.stage.compileValidate',
+  compiling: 'rsi.presentation.stage.compileValidate',
+  code_generation: 'rsi.presentation.stage.implement',
+  program_generation: 'rsi.presentation.stage.implement',
+  validate: 'rsi.presentation.stage.validate',
+  validation: 'rsi.presentation.stage.validate',
 };
 
 /** Parse the structured provider stage payload carried in node.extra.stage. */
@@ -172,23 +173,23 @@ export function nodeStageLabel(node: RsiTreeNode): string | null {
   if (!raw) return null;
   if (id) {
     const normalizedId = id.replace(/_/g, '');
-    const knownById = Object.entries(STAGE_LABELS).find(([key]) => key.replace(/_/g, '') === normalizedId);
-    if (knownById) return knownById[1];
+    const knownById = Object.entries(STAGE_LABEL_KEYS).find(([key]) => key.replace(/_/g, '') === normalizedId);
+    if (knownById) return i18n.t(knownById[1]);
   }
   const lower = raw.toLowerCase();
-  if (lower.includes('调研') || lower.includes('research') || lower.includes('survey')) return '调研中';
-  if (lower.includes('设计') || lower.includes('design')) return '设计中';
-  if (lower.includes('实现') || lower.includes('implement') || lower.includes('生成程序')) return '实现中';
-  if (lower.includes('执行') || lower.includes('execute') || lower.includes('experiment')) return '执行中';
+  if (lower.includes('调研') || lower.includes('research') || lower.includes('survey')) return i18n.t('rsi.presentation.stage.research');
+  if (lower.includes('设计') || lower.includes('design')) return i18n.t('rsi.presentation.stage.design');
+  if (lower.includes('实现') || lower.includes('implement') || lower.includes('生成程序')) return i18n.t('rsi.presentation.stage.implement');
+  if (lower.includes('执行') || lower.includes('execute') || lower.includes('experiment')) return i18n.t('rsi.presentation.stage.execute');
   if (lower.includes('评测') || lower.includes('评分') || lower.includes('evaluat') || lower.includes('score')) {
-    return '评测中';
+    return i18n.t('rsi.presentation.stage.evaluate');
   }
   if (lower.includes('撰写') || lower.includes('报告') || lower.includes('report') || lower.includes('write'))
-    return '撰写中';
+    return i18n.t('rsi.presentation.stage.report');
   if (lower.includes('编译') || lower.includes('校验') || lower.includes('validat') || lower.includes('compil')) {
-    return '编译校验中';
+    return i18n.t('rsi.presentation.stage.compileValidate');
   }
-  if (lower.includes('规划') || lower.includes('plan')) return '规划中';
+  if (lower.includes('规划') || lower.includes('plan')) return i18n.t('rsi.presentation.stage.plan');
   return clampText(raw, 24);
 }
 
@@ -233,8 +234,8 @@ export function nodeStageLocalizedLabel(node: RsiTreeNode, t: RsiI18nFunction | 
       const suffix =
         t?.('rsi.stage.scoreSuffix', {
           score: spec.score.toFixed(2),
-          defaultValue: ` · 得分 ${spec.score.toFixed(2)}`,
-        }) ?? ` · 得分 ${spec.score.toFixed(2)}`;
+          defaultValue: ` · ${i18n.t('rsi.presentation.score.label')} ${spec.score.toFixed(2)}`,
+        }) ?? ` · ${i18n.t('rsi.presentation.score.label')} ${spec.score.toFixed(2)}`;
       return `${label}${suffix}`;
     }
     return label;
@@ -270,46 +271,47 @@ export function nodeStageLocalizedLabel(node: RsiTreeNode, t: RsiI18nFunction | 
   return null;
 }
 
-const CHANGE_AREA_LABELS: Record<string, string> = {
-  paper: '论文内容',
-  program: '程序逻辑',
-  prompt: '提示词',
-  skill: '技能',
-  tool: '工具',
-  rail: '护栏',
-  experiments: '实验设计',
-  experiment: '实验设计',
-  reporting: '报告生成',
+const CHANGE_AREA_KEYS: Record<string, string> = {
+  paper: 'rsi.presentation.changeArea.paper',
+  program: 'rsi.presentation.changeArea.program',
+  prompt: 'rsi.presentation.changeArea.prompt',
+  skill: 'rsi.presentation.changeArea.skill',
+  tool: 'rsi.presentation.changeArea.tool',
+  rail: 'rsi.presentation.changeArea.rail',
+  experiments: 'rsi.presentation.changeArea.experiments',
+  experiment: 'rsi.presentation.changeArea.experiments',
+  reporting: 'rsi.presentation.changeArea.reporting',
 };
 
-const OPERATION_LABELS: Record<string, string> = {
-  add: '新增',
-  create: '新增',
-  generate: '生成',
-  modify: '调整',
-  update: '调整',
-  remove: '移除',
-  delete: '移除',
-  replace: '替换',
+const OPERATION_KEYS: Record<string, string> = {
+  add: 'rsi.presentation.operation.add',
+  create: 'rsi.presentation.operation.add',
+  generate: 'rsi.presentation.operation.generate',
+  modify: 'rsi.presentation.operation.modify',
+  update: 'rsi.presentation.operation.modify',
+  remove: 'rsi.presentation.operation.remove',
+  delete: 'rsi.presentation.operation.remove',
+  replace: 'rsi.presentation.operation.replace',
 };
 
 function changeAreaLabel(change: RsiNodeChange): string | null {
   const raw = nodeChangeGroup(change).trim().toLowerCase();
   if (!raw) return null;
-  return CHANGE_AREA_LABELS[raw] ?? raw;
+  return CHANGE_AREA_KEYS[raw] ? i18n.t(CHANGE_AREA_KEYS[raw]) : raw;
 }
 
 /** A compact change sentence used by both the tree card and the detail drawer. */
 export function nodeChangeDisplayLabel(change: RsiNodeChange): string {
   const summary = clampText(change.summary ?? change.reason ?? null, 150);
   if (summary) {
-    if (summary === 'Generated a new paper version.') return '生成新的论文版本';
-    if (summary === 'the starting program') return '基线程序';
+    if (summary === 'Generated a new paper version.') return i18n.t('rsi.presentation.change.generatedNewPaper');
+    if (summary === 'the starting program') return i18n.t('rsi.presentation.change.baselineProgram');
     return summary;
   }
   const area = changeAreaLabel(change);
-  const operation = OPERATION_LABELS[change.operation.toLowerCase()] ?? change.operation.toLowerCase();
-  return [area, operation].filter(Boolean).join(' · ') || '产生结构化改动';
+  const operationKey = OPERATION_KEYS[change.operation.toLowerCase()];
+  const operation = operationKey ? i18n.t(operationKey) : change.operation.toLowerCase();
+  return [area, operation].filter(Boolean).join(' · ') || i18n.t('rsi.presentation.change.genericChange');
 }
 
 function nodeDescriptionSummary(node: RsiTreeNode): string | null {
@@ -319,10 +321,10 @@ function nodeDescriptionSummary(node: RsiTreeNode): string | null {
     description === 'paper optimization root' ||
     description === 'No starting paper; first node writes from scratch.'
   ) {
-    return '从基线开始生成论文';
+    return i18n.t('rsi.presentation.change.baselinePaperStart');
   }
-  if (description === 'Uploaded starting paper (ingestion not yet wired in).') return '已上传起始论文';
-  if (description === 'the starting program') return '从基线程序开始优化';
+  if (description === 'Uploaded starting paper (ingestion not yet wired in).') return i18n.t('rsi.presentation.change.uploadedStartingPaper');
+  if (description === 'the starting program') return i18n.t('rsi.presentation.change.baselineProgramOptimize');
   return clampText(description);
 }
 
@@ -421,7 +423,7 @@ export interface RsiNodePresentation {
 
 function artifactObjectLabel(scenario: RsiScenario, artifactType: RsiArtifactType | null): string {
   if (scenario === 'HARNESS') return 'Harness';
-  return artifactType === 'PROGRAM' ? '程序' : '论文';
+  return artifactType === 'PROGRAM' ? i18n.t('rsi.presentation.artifactObject.program') : i18n.t('rsi.presentation.artifactObject.paper');
 }
 
 export const SKIPPED_TARGET_REACHED = 'SKIPPED_TARGET_REACHED';
@@ -467,19 +469,19 @@ function failureLabel(
       failureClass.includes('decision') ||
       failureReason.includes('manager decision')
     ) {
-      return '管理器决策失败';
+      return i18n.t('rsi.presentation.failure.managerDecision');
     }
-    if (failureClass.includes('scor')) return '评分失败';
-    if (failureClass.includes('compile') || failureClass.includes('valid')) return '编译或校验未通过';
-    if (failureClass.includes('timeout')) return '执行超时';
-    return '生成失败';
+    if (failureClass.includes('scor')) return i18n.t('rsi.presentation.failure.scoreFail');
+    if (failureClass.includes('compile') || failureClass.includes('valid')) return i18n.t('rsi.presentation.failure.compileValidate');
+    if (failureClass.includes('timeout')) return i18n.t('rsi.presentation.failure.timeout');
+    return i18n.t('rsi.presentation.failure.generationFail');
   }
   if (lifecycle === 'rejected') {
-    if (score != null && parentScore != null) return '得分未超过父节点';
-    return '未达到采纳条件';
+    if (score != null && parentScore != null) return i18n.t('rsi.presentation.failure.scoreNotBeatParent');
+    return i18n.t('rsi.presentation.failure.notAdopted');
   }
-  if (lifecycle === 'pruned') return asText(node.failure_reason) || '搜索空间已剪枝';
-  if (lifecycle === 'skipped') return SKIPPED_TARGET_REACHED_REASON;
+  if (lifecycle === 'pruned') return asText(node.failure_reason) || i18n.t('rsi.presentation.failure.prunedReason');
+  if (lifecycle === 'skipped') return i18n.t('rsi.presentation.failure.skippedTargetReached');
   return null;
 }
 
@@ -533,21 +535,21 @@ function lifecycleRuntimeLabel(lifecycle: RsiNodeLifecycle): string {
   switch (lifecycle) {
     case 'baseline':
     case 'adopted':
-      return '当前最优';
+      return i18n.t('rsi.presentation.lifecycle.bestCurrent');
     case 'generating':
-      return '生成中';
+      return i18n.t('rsi.presentation.lifecycle.generating');
     case 'evaluating':
-      return '评测中';
+      return i18n.t('rsi.presentation.lifecycle.evaluating');
     case 'pending':
-      return '待处理';
+      return i18n.t('rsi.presentation.lifecycle.pending');
     case 'rejected':
-      return '未采用';
+      return i18n.t('rsi.presentation.lifecycle.rejected');
     case 'failed':
-      return '失败';
+      return i18n.t('rsi.presentation.lifecycle.failed');
     case 'pruned':
-      return '已剪枝';
+      return i18n.t('rsi.presentation.lifecycle.pruned');
     case 'skipped':
-      return '已跳过';
+      return i18n.t('rsi.presentation.lifecycle.skipped');
   }
 }
 
@@ -558,14 +560,14 @@ function titleForNode(
   attempt: { index: number; total: number } | null,
 ): string {
   const objectLabel = artifactObjectLabel(context.scenario, context.artifactType);
-  if (lifecycle === 'baseline') return `基线${objectLabel}`;
+  if (lifecycle === 'baseline') return `${i18n.t('rsi.presentation.title.baselinePrefix')}${objectLabel}`;
   if (lifecycle === 'adopted') {
     const runningProgram = context.artifactType === 'PROGRAM' && context.taskRunning;
-    return `${objectLabel}版本 ${round} · ${runningProgram ? '当前领先' : '当前最优'}`;
+    return i18n.t('rsi.presentation.title.versionRound', { label: objectLabel, round }) + ` · ${runningProgram ? i18n.t('rsi.presentation.title.leading') : i18n.t('rsi.presentation.title.bestCurrent')}`;
   }
-  const suffix = lifecycle === 'failed' ? '尝试' : lifecycle === 'pruned' ? '候选' : '候选';
+  const suffix = lifecycle === 'failed' ? i18n.t('rsi.presentation.title.attemptSuffix') : i18n.t('rsi.presentation.title.candidateSuffix');
   const attemptLabel = attempt ? ` ${attempt.index}/${attempt.total}` : '';
-  return `第 ${round} 轮 · ${objectLabel}${suffix}${attemptLabel}`;
+  return i18n.t('rsi.presentation.title.roundAttempt', { round, label: objectLabel, suffix, attempt: attemptLabel });
 }
 
 export function presentRsiNode(node: RsiTreeNode, context: RsiNodePresentationContext): RsiNodePresentation {
@@ -585,14 +587,14 @@ export function presentRsiNode(node: RsiTreeNode, context: RsiNodePresentationCo
     title: titleForNode(context, lifecycle, round, attempt),
     subtitle:
       lifecycle === 'baseline'
-        ? '优化起点'
+        ? i18n.t('rsi.presentation.subtitle.optimizationStart')
         : attempt
-          ? `第 ${round} 轮 · 尝试 ${attempt.index}/${attempt.total}`
-          : `第 ${round} 轮`,
+          ? i18n.t('rsi.presentation.subtitle.roundAttempt', { round, index: attempt.index, total: attempt.total })
+          : i18n.t('rsi.presentation.subtitle.round', { round }),
     lifecycle,
     statusKind: lifecycleStatusKind(lifecycle),
     runtimeKind: lifecycleRuntimeKind(lifecycle),
-    runtimeLabel: runningProgramLeader ? '当前领先' : lifecycleRuntimeLabel(lifecycle),
+    runtimeLabel: runningProgramLeader ? i18n.t('rsi.presentation.lifecycle.leading') : lifecycleRuntimeLabel(lifecycle),
     runtimeIcon: runtimeIconKind(lifecycleRuntimeKind(lifecycle)),
     stageLabel: nodeStageLabel(node),
     summary,
@@ -721,7 +723,7 @@ export function formatGain(gain: number | null): { text: string; kind: 'up' | 'd
 export function formatTokens(tokens: { input: number; output: number; cache_hit: number }): string {
   const total = tokens.input + tokens.output;
   const wan = total / 10000;
-  if (wan >= 1) return `${wan.toFixed(1)} 万tokens`;
+  if (wan >= 1) return i18n.t('rsi.presentation.formatTokens', { value: wan.toFixed(1) });
   return `${total}tokens`;
 }
 
@@ -765,15 +767,15 @@ export function formatDateTime(iso: string | null | undefined): string {
 
 // 场景显示名：面向用户的名称不再使用“产物优化|论文”这种技术分隔符。
 export function scenarioLabel(scenario: 'HARNESS' | 'ARTIFACT'): string {
-  return scenario === 'HARNESS' ? 'Harness优化' : '产物优化';
+  return scenario === 'HARNESS' ? i18n.t('rsi.presentation.scenario.harness') : i18n.t('rsi.presentation.scenario.artifact');
 }
 export function artifactTypeLabel(type: 'PAPER' | 'PROGRAM'): string {
-  return type === 'PAPER' ? '论文' : '程序';
+  return type === 'PAPER' ? i18n.t('rsi.presentation.artifactType.paper') : i18n.t('rsi.presentation.artifactType.program');
 }
 // 完整类型标签：Harness优化 / 论文优化 / 程序优化
 export function typeDisplayLabel(scenario: 'HARNESS' | 'ARTIFACT', artifactType: 'PAPER' | 'PROGRAM' | null): string {
-  if (scenario === 'HARNESS') return 'Harness优化';
-  return artifactType === 'PROGRAM' ? '程序优化' : '论文优化';
+  if (scenario === 'HARNESS') return i18n.t('rsi.presentation.typeDisplay.harness');
+  return artifactType === 'PROGRAM' ? i18n.t('rsi.presentation.typeDisplay.program') : i18n.t('rsi.presentation.typeDisplay.paper');
 }
 
 // 状态徽章信息：i18n 标签 key + 图标类型
@@ -809,29 +811,29 @@ export function nodeDisplayName(
   artifactType: RsiArtifactType | null,
 ): string {
   if (type === 'ROOT') {
-    if (scenario === 'HARNESS') return '基线Harness';
-    if (artifactType === 'PAPER') return '基线论文';
-    return '基线程序';
+    if (scenario === 'HARNESS') return i18n.t('rsi.presentation.title.baselineHarness');
+    if (artifactType === 'PAPER') return i18n.t('rsi.presentation.title.baselinePaper');
+    return i18n.t('rsi.presentation.title.baselineProgram');
   }
   const objectLabel = artifactObjectLabel(scenario, artifactType);
   const match = nodeId.match(/(?:attempt|node|N|:)(\d+)$/i);
-  const ordinal = match?.[1] ?? '候选';
-  return type === 'ADOPTED' ? `${objectLabel}版本 ${ordinal}` : `${objectLabel}候选 ${ordinal}`;
+  const ordinal = match?.[1] ?? i18n.t('rsi.presentation.nodeDisplayName.candidateDefault');
+  return type === 'ADOPTED' ? i18n.t('rsi.presentation.nodeDisplayName.version', { label: objectLabel, ordinal }) : i18n.t('rsi.presentation.nodeDisplayName.candidate', { label: objectLabel, ordinal });
 }
 
 // 节点状态标签（兼容旧调用点）；新 UI 使用 presentRsiNode.runtimeLabel。
 export function nodeStatusLabel(type: RsiNodeType): string {
   switch (type) {
     case 'ROOT':
-      return '基线';
+      return i18n.t('rsi.presentation.statusLabel.baseline');
     case 'ADOPTED':
-      return '当前最优';
+      return i18n.t('rsi.presentation.statusLabel.bestCurrent');
     case 'REJECTED':
-      return '未采用';
+      return i18n.t('rsi.presentation.statusLabel.rejected');
     case 'PROVISIONAL':
-      return '进行中';
+      return i18n.t('rsi.presentation.statusLabel.inProgress');
     case 'PRUNED':
-      return '已剪枝';
+      return i18n.t('rsi.presentation.statusLabel.pruned');
   }
 }
 
@@ -891,17 +893,17 @@ export function runtimeIconKind(kind: NodeRuntimeKind): NodeIconKind {
 export function nodeRuntimeLabel(kind: NodeRuntimeKind): string {
   switch (kind) {
     case 'best-path':
-      return '当前最优';
+      return i18n.t('rsi.presentation.lifecycle.bestCurrent');
     case 'evaluated':
-      return '未采用';
+      return i18n.t('rsi.presentation.lifecycle.rejected');
     case 'evaluating':
-      return '评测中';
+      return i18n.t('rsi.presentation.lifecycle.evaluating');
     case 'pending':
-      return '待处理';
+      return i18n.t('rsi.presentation.lifecycle.pending');
     case 'failed':
-      return '失败';
+      return i18n.t('rsi.presentation.lifecycle.failed');
     case 'pruned':
-      return '已剪枝';
+      return i18n.t('rsi.presentation.lifecycle.pruned');
   }
 }
 
@@ -918,15 +920,15 @@ export function nodeScoreLines(
 ): NodeScoreLine[] {
   const lines: NodeScoreLine[] = [];
   const score = scoreForNode(node);
-  if (score != null) lines.push({ value: formatArtifactScore(score, artifactType, scenario), label: '分数' });
+  if (score != null) lines.push({ value: formatArtifactScore(score, artifactType, scenario), label: i18n.t('rsi.presentation.score.label') });
   if (scenario === 'HARNESS') return lines;
   const extra = node.extra;
   if (extra && typeof extra === 'object') {
     const potential = extra['potential_score'];
     if (typeof potential === 'number')
-      lines.push({ value: formatArtifactScore(potential, artifactType), label: '潜力分' });
+      lines.push({ value: formatArtifactScore(potential, artifactType), label: i18n.t('rsi.presentation.score.potential') });
     const other = extra['other_score'];
-    if (typeof other === 'number') lines.push({ value: formatArtifactScore(other, artifactType), label: '其他分' });
+    if (typeof other === 'number') lines.push({ value: formatArtifactScore(other, artifactType), label: i18n.t('rsi.presentation.score.other') });
     for (const [k, v] of Object.entries(extra)) {
       if (k === 'potential_score' || k === 'other_score') continue;
       if (k.endsWith('_score') && typeof v === 'number') {
@@ -938,15 +940,15 @@ export function nodeScoreLines(
 }
 
 function scoreLabel(value: string): string {
-  const labels: Record<string, string> = {
-    overall: '总分',
-    quality: '质量分',
-    correctness: '正确性',
-    gate: '门槛分',
-    reward: '奖励分',
-    rollout: '执行分',
+  const labelKeys: Record<string, string> = {
+    overall: 'rsi.presentation.score.overall',
+    quality: 'rsi.presentation.score.quality',
+    correctness: 'rsi.presentation.score.correctness',
+    gate: 'rsi.presentation.score.gate',
+    reward: 'rsi.presentation.score.reward',
+    rollout: 'rsi.presentation.score.rollout',
   };
-  return labels[value.toLowerCase()] ?? value.replace(/[_-]+/g, ' ');
+  return labelKeys[value.toLowerCase()] ? i18n.t(labelKeys[value.toLowerCase()]) : value.replace(/[_-]+/g, ' ');
 }
 
 // 节点尺寸估算（布局与组件共用，保证布局高度=渲染高度）
@@ -993,7 +995,7 @@ export function nodeMetrics(
   const stage = nodeStageLabel(node);
   const rootStageRunning = node.type === 'ROOT' && nodeStageSpec(node)?.status === 'running';
   if (kind === 'evaluating') {
-    const text = stage ?? summary ?? '正在处理';
+    const text = stage ?? summary ?? i18n.t('rsi.presentation.processing');
     const secondary = stage && summary ? summary : null;
     width = Math.min(RSI_NODE_MAX_W, Math.max(RSI_NODE_MIN_W, text.length * 8 + 32));
     bodyH = Math.max(
