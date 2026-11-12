@@ -21,7 +21,7 @@ import threading
 import time
 import weakref
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Awaitable, Mapping
 from contextlib import ExitStack, aclosing, asynccontextmanager, contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, replace
@@ -730,6 +730,7 @@ from jiuwenswarm.common.runtime_workspace import (
     resolve_runtime_workspace_paths,
 )
 from jiuwenswarm.common.mcp_dynamic_token_patch import (
+    SSL_VERIFY_ENTRY_KEY,
     _registry_token_url,
     apply_mcp_dynamic_token_patch,
     mark_dynamic_token_server,
@@ -3097,7 +3098,7 @@ class JiuWenSwarmDeepAdapter:
         if isinstance(v, str) and v != "":
             if not equipment.is_agent_template_installed(v):
                 return f"agent_template not installed: {v}"
-            from jiuwenswarm.enterprise.capabilities.experts.allowlist import allows
+            from jiuwenswarm.enterprise.capabilities.experts.request_packages import allows
 
             if not allows("agent_template", v):
                 return f"agent_template not allowed: {v}"
@@ -3178,6 +3179,70 @@ class JiuWenSwarmDeepAdapter:
         if self._instance is not None:
             await self._instance.unload_extension(current[1])
         self._loaded_agent_template = None
+
+    def assert_plugin_replacement_idle(self, package_id: str) -> None:
+        """Check every session before replacement starts detaching resources."""
+        from jiuwenswarm.server.runtime.plugin_package_lifecycle import PluginPackageBusy
+
+        manager = getattr(self, "_plugin_runtime_manager", None)
+        if manager is not None:
+            slot = manager.slots.get(package_id)
+            if manager.transition_lock.locked() or (slot is not None and slot.recovery is not None):
+                raise PluginPackageBusy("Plugin is executing or closing; retry when idle")
+        for adapter in list(getattr(self, "_session_adapters", {}).values()):
+            if adapter is not self:
+                adapter.assert_plugin_replacement_idle(package_id)
+
+    def plugin_replacement_rollback(self, package_id: str) -> Callable[[], Awaitable[None]] | None:
+        """Capture this adapter's selection for restoring a failed replacement."""
+        names = self._current_plugin_names()
+        if package_id not in names:
+            return None
+
+        async def restore() -> None:
+            manager = getattr(self, "_plugin_runtime_manager", None)
+            params = {"plugin_names": names}
+            if manager is None:
+                await self._load_plugins_for_request(params)
+            else:
+                session_id = getattr(self, "_parent_session_id", None) or "default"
+                async with manager.transition(params, session_id):
+                    await self._load_plugins_for_request(params)
+
+        return restore
+
+    async def prepare_plugin_replacement(self, package_id: str) -> Callable[[], Awaitable[None]]:
+        """Detach idle live plugins and return a rollback for their selections."""
+        self.assert_plugin_replacement_idle(package_id)
+        rollbacks = []
+        pending = [self]
+        visited = set()
+        while pending:
+            adapter = pending.pop()
+            if id(adapter) in visited:
+                continue
+            visited.add(id(adapter))
+            rollback = adapter.plugin_replacement_rollback(package_id)
+            if rollback is not None:
+                rollbacks.append(rollback)
+            pending.extend(getattr(adapter, "_session_adapters", {}).values())
+
+        async def restore() -> None:
+            errors = []
+            for rollback in rollbacks:
+                try:
+                    await rollback()
+                except Exception as exc:
+                    errors.append(exc)
+            if errors:
+                raise ExceptionGroup("Failed to restore live plugins after replacement", errors)
+
+        try:
+            await self.unload_equipment_if_loaded("plugin_packages", package_id)
+        except BaseException:
+            await restore()
+            raise
+        return restore
 
     async def unload_equipment_if_loaded(self, kind: str, package_id: str) -> None:
         """Unload ``package_id`` from this adapter and live sessions.
@@ -5977,7 +6042,6 @@ class JiuWenSwarmDeepAdapter:
             )
 
         # cua_agent (desktop automation via screenshots + real input) — 按配置启用。
-        # No runtime switch beyond the config gate: it drives the host desktop.
         cua_agent_cfg = (
             subagents_cfg.get("cua_agent") if isinstance(subagents_cfg, dict) else None
         )
@@ -5988,21 +6052,21 @@ class JiuWenSwarmDeepAdapter:
                 "and cua_agent sees the screen only through screenshots"
             )
         elif is_cua_agent_enabled(cua_agent_cfg):
-            subagents.append(
-                build_cua_agent_config(
-                    model,
-                    card=build_cua_agent_card(resolved_language),
-                    workspace=workspace,
-                    sys_operation=sys_operation,
-                    language=resolved_language,
-                    max_iterations=parse_int(
-                        cua_agent_cfg.get("max_iterations"),
-                        DEFAULT_CUA_AGENT_MAX_ITERATIONS,
-                    ),
-                    rails=[SubagentToolActivityRail()],
-                    **resolve_cua_factory_options(cua_agent_cfg),
-                )
+            cua_spec = build_cua_agent_config(
+                model,
+                card=build_cua_agent_card(resolved_language),
+                workspace=workspace,
+                sys_operation=sys_operation,
+                language=resolved_language,
+                max_iterations=parse_int(
+                    cua_agent_cfg.get("max_iterations"),
+                    DEFAULT_CUA_AGENT_MAX_ITERATIONS,
+                ),
+                rails=[SubagentToolActivityRail()],
+                **resolve_cua_factory_options(cua_agent_cfg),
             )
+            if cua_spec is not None:
+                subagents.append(cua_spec)
 
         # ── 加载自定义 agent（.jiuwenswarm/agents/*.md）──
         try:
@@ -6110,7 +6174,23 @@ class JiuWenSwarmDeepAdapter:
         # 失败出口由 finally 统一 unmark。条目未携带 dynamic_token_url 或
         # 实例凭据未下发时 mark 是 no-op（该网关保持静态头）。
         server_id = str(getattr(cfg, "server_id", "") or "").strip()
-        marked = mark_dynamic_token_server(server_id, dynamic_token_url)
+        # 条目级 ssl_verify：build_mcp_server_config 只在「dynamic_token_url +
+        # 显式 false」时写入 params；随 mark 登记，取 token 客户端按 server_id
+        # 现读（见 DynamicTokenAuthStrategy / preflight）。
+        ssl_verify = (getattr(cfg, "params", None) or {}).get(
+            SSL_VERIFY_ENTRY_KEY
+        ) is not False
+        marked = mark_dynamic_token_server(
+            server_id, dynamic_token_url, ssl_verify=ssl_verify
+        )
+        logger.debug(
+            "[JiuWenSwarmDeepAdapter] dynamic-token gateway marked: name=%s "
+            "server_id=%s marked=%s ssl_verify=%s dynamic_token_url=set",
+            cfg.server_name,
+            server_id,
+            marked,
+            ssl_verify,
+        )
         ok_registered = False
         try:
             # stdio: command 必须可执行（npx/uvx/node 等），否则 SDK 启动子进程会
@@ -10159,9 +10239,9 @@ class JiuWenSwarmDeepAdapter:
             from jiuwenswarm.agents.harness.common.rsi.harness_activation import (
                 RsiHarnessActivationStore,
             )
-            from jiuwenswarm.common.utils import get_infra_data_dir
+            from jiuwenswarm.common.utils import get_user_workspace_dir
 
-            store = RsiHarnessActivationStore(get_infra_data_dir() / "rsi" / "tasks")
+            store = RsiHarnessActivationStore(get_user_workspace_dir() / "rsi" / "tasks")
             active = store.get_active()
         except Exception as exc:  # noqa: BLE001 - startup must remain available
             logger.warning("[JiuWenSwarmDeepAdapter] RSI Harness state unavailable: %s", exc)
@@ -14249,10 +14329,10 @@ class JiuWenSwarmDeepAdapter:
 
             if rail is None:
                 try:
-                    from jiuwenswarm.common.utils import get_domain_data_dir
+                    from jiuwenswarm.common.utils import get_user_workspace_dir
 
                     rail = PersonalContextRail(
-                        get_domain_data_dir() / ".personal_context"
+                        get_user_workspace_dir() / ".personal_context"
                     )
                     await self._instance.register_rail(rail)
                 except Exception as exc:  # noqa: BLE001
@@ -18564,6 +18644,14 @@ class JiuWenSwarmDeepAdapter:
         self, request: AgentRequest, inputs: dict[str, Any]
     ) -> AgentResponse:
         """Bind trusted host identity and command execution for one request."""
+        from jiuwenswarm.server.runtime.plugin_package_lifecycle import use_plugins
+
+        with use_plugins(self._plugin_turn_packages(request)):
+            return await self._process_message_with_plugin_reservation(request, inputs)
+
+    async def _process_message_with_plugin_reservation(
+        self, request: AgentRequest, inputs: dict[str, Any]
+    ) -> AgentResponse:
         async with self._permission_request_admission(request, inputs):
             self.validate_auto_permission_workspace_request(request)
             from jiuwenswarm.server.runtime.video_task.execution import bind_task_execution
@@ -19106,30 +19194,16 @@ class JiuWenSwarmDeepAdapter:
         self._session_input_guard = guard
 
     def _require_cross_session_task_admission(self, request: AgentRequest) -> None:
-        """Refuse protected-mode steering before any SDK submission."""
-        from jiuwenswarm.agents.harness.common.session_ops_service import resolve_live_agent_session
-        from agent_gateway.common.mode_matrix import is_plan_mode
-        from jiuwenswarm.runtime.context import get_current_runtime
-        from jiuwenswarm.runtime.session_input import SessionInputQueueRequiredError
+        """Refuse protected-mode steering before any SDK submission.
 
-        runtime = get_current_runtime()
-        checker = getattr(runtime, "session_message_requires_queue", None)
-        protected = (
-            is_plan_mode(self._last_mode)
-            or is_plan_mode(request.params.get("mode"))
-            or self.has_active_goal_interaction()
-            or bool(callable(checker) and checker(request.session_id))
-        )
-        if not protected and self._instance is not None:
-            session = resolve_live_agent_session(self._instance, request.session_id)
-            if session is not None:
-                # enter_plan_mode may run after the request mode was selected.
-                protected = self._instance.load_state(session).plan_mode.mode == "plan"
-        if protected:
-            raise SessionInputQueueRequiredError(
-                "cross-session messages must queue while a plan or goal is active; "
-                "supplemental input was not sent"
-            )
+        MODIFIED: Steering is now always allowed — plan mode, active goals,
+        and other protected states no longer block cross-session steering.
+        The user's steered message should always be injected into context.
+        """
+        # Previously this method checked is_plan_mode, has_active_goal_interaction,
+        # session_message_requires_queue, and plan_mode.mode == "plan" to block
+        # steering. All those checks are now bypassed to allow steering in all states.
+        return
 
     def _select_steer_image_tool(self) -> str:
         """Use the active owner's registered tools and live native-image policy."""
@@ -19210,11 +19284,9 @@ class JiuWenSwarmDeepAdapter:
                     "image supplemental input requires an active execution; supplemental input was not sent"
                 )
             return False
-        if self._stream_completion_state(had_interaction=False) == "suspended":
-            raise SessionInputRejectedError(
-                "session is waiting for an interaction answer; "
-                "supplemental input was not sent"
-            )
+        # Allow steering even when session is suspended waiting for an interaction
+        # answer (ask/confirm/permission card). Previously this raised
+        # SessionInputRejectedError which deferred the steer to the queue.
         bound_round = instance.active_round
 
         def require_open_input() -> None:
@@ -19226,12 +19298,11 @@ class JiuWenSwarmDeepAdapter:
                     accepting = False
                 else:
                     accepting = guard.accepting
-                if not accepting:
-                    raise SessionInputRejectedError(
-                        "session is finishing or changing execution state; "
-                        "supplemental input was not sent, "
-                        "retry after it settles"
-                    )
+                # Allow steering even when the guard is not accepting (model
+                # idle, between iterations, post-exception). Previously this
+                # raised SessionInputRejectedError which deferred to queue.
+                # The steer will be picked up on the next model iteration or
+                # tool execution cycle.
 
         require_open_input()
         media_items = []
@@ -19354,6 +19425,31 @@ class JiuWenSwarmDeepAdapter:
         self, request: AgentRequest, inputs: dict[str, Any]
     ) -> AsyncIterator[AgentResponseChunk]:
         """Bind trusted host identity and command execution for one stream."""
+        from jiuwenswarm.server.runtime.plugin_package_lifecycle import use_plugins
+
+        stream = self._process_stream_with_plugin_reservation(request, inputs)
+        with use_plugins(self._plugin_turn_packages(request), on_owner_done=stream.aclose):
+            async with aclosing(stream):
+                async for chunk in stream:
+                    yield chunk
+
+    def _plugin_turn_packages(self, request: AgentRequest) -> list[str]:
+        """Include saved selections before a root adapter delegates the turn."""
+        from jiuwenswarm.server.runtime.session.session_metadata import get_session_equipment
+
+        params = request.params if isinstance(request.params, dict) else {}
+        saved = get_session_equipment(request.session_id, cache_bust=True) if request.session_id else {}
+        names = [*self._current_plugin_names(), *saved.get("plugin_names", [])]
+        selected = params.get("plugin_names", [])
+        if isinstance(selected, list):
+            names.extend(name for name in selected if isinstance(name, str))
+        return list(dict.fromkeys(
+            equipment.resolve_equipment_runtime_id("plugin_packages", name) for name in names
+        ))
+
+    async def _process_stream_with_plugin_reservation(
+        self, request: AgentRequest, inputs: dict[str, Any]
+    ) -> AsyncIterator[AgentResponseChunk]:
         async with self._permission_request_admission(request, inputs):
             self.validate_auto_permission_workspace_request(request)
             from jiuwenswarm.server.runtime.video_task.execution import bind_task_execution
