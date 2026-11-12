@@ -560,6 +560,11 @@ function AppContent({
   const loadPersonalContextConfig = usePersonalContextStore((s) => s.loadConfig);
   const [serverConfig, setServerConfig] = useState<Record<string, unknown> | null>(null);
   const trajectoryDiagnosisEnabled = useTrajectoryDiagnosisEnabled();
+  useEffect(() => {
+    const appVersion = typeof serverConfig?.app_version === 'string' ? serverConfig.app_version : undefined;
+    const baseTitle = 'WorkSwarm';
+    document.title = appVersion ? `${baseTitle} ${appVersion} (local)` : `${baseTitle} (local)`;
+  }, [serverConfig?.app_version]);
   const [configError, setConfigError] = useState<string | null>(null);
   const [initialDataLoaded, setInitialDataLoaded] = useState(false);
   const [restartModalOpen, setRestartModalOpen] = useState(false);

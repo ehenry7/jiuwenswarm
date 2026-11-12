@@ -172,6 +172,20 @@ const messages = {
     displayNameHelp: '展示名称用于 Hub 广场卡片和详情页展示，可以使用中文，最长 128 个字符。',
     descriptionHelp: '简介发布后显示在 Hub 广场卡片和详情页中，用于说明资源的主要能力。',
     tagsHelp: '标签用于 Hub 的分类、搜索和资源识别，多个标签使用逗号分隔。',
+    issueSourceChanged: '源文件已变化，请重新检查。',
+    issueAuthRequired: '请先登录。',
+    issueDraftExpired: '检查结果已过期，请重新检查。',
+    issueResourceNotFound: '找不到本地资源，请检查是否已安装。',
+    issueSecretDetected: '包内检测到敏感信息，请移除后重新检查。',
+    issueVersionConflict: '版本已存在，请修改版本或明确选择覆盖。',
+    desktopBrowserNotReady: '桌面浏览器功能尚未就绪，请重试。',
+    browserBlocked: '浏览器阻止了授权窗口，请允许打开新标签页。',
+    cannotOpenBrowser: '无法打开系统浏览器，请重试。',
+    oauthUnavailable: 'OAuth 登录不可用',
+    assetTypeExpert: '专家',
+    assetTypeExpertGroup: '专家团',
+    assetTypePlugin: '插件',
+    assetTypeConnector: '连接器',
   },
   en: {
     title: 'Publish resource',
@@ -295,6 +309,20 @@ const messages = {
     displayNameHelp: 'The user-facing name shown on Hub cards and detail pages; maximum 128 characters.',
     descriptionHelp: 'Shown on Hub cards and detail pages to explain the main capabilities of the resource.',
     tagsHelp: 'Used for Hub categories, search, and discovery. Separate multiple tags with commas.',
+    issueSourceChanged: 'Source files changed. Check the package again.',
+    issueAuthRequired: 'Sign in first.',
+    issueDraftExpired: 'Package review expired. Check again.',
+    issueResourceNotFound: 'Local resource was not found. Check its installation.',
+    issueSecretDetected: 'Sensitive information was detected. Remove it and check again.',
+    issueVersionConflict: 'This version exists. Change the version or explicitly enable overwrite.',
+    desktopBrowserNotReady: 'Desktop browser is not ready. Please retry.',
+    browserBlocked: 'The browser blocked the authorization window. Allow pop-ups and retry.',
+    cannotOpenBrowser: 'Could not open the system browser. Please retry.',
+    oauthUnavailable: 'OAuth sign-in is unavailable',
+    assetTypeExpert: 'Expert',
+    assetTypeExpertGroup: 'Expert group',
+    assetTypePlugin: 'Plugin',
+    assetTypeConnector: 'Connector',
   },
 };
 type MessageKey = keyof typeof messages.en;
@@ -328,21 +356,12 @@ function AssetPublishDrawer({
     const issue = value as { code?: string; message?: string; path?: string };
     const zh = i18n.language.startsWith('zh');
     const known: Record<string, [string, string]> = {
-      SOURCE_CHANGED: ['源文件已变化，请重新检查。', 'Source files changed. Check the package again.'],
-      AUTH_REQUIRED: ['请先登录。', 'Sign in first.'],
-      DRAFT_EXPIRED: ['检查结果已过期，请重新检查。', 'Package review expired. Check again.'],
-      RESOURCE_NOT_FOUND: [
-        '找不到本地资源，请检查是否已安装。',
-        'Local resource was not found. Check its installation.',
-      ],
-      SECRET_DETECTED: [
-        '包内检测到敏感信息，请移除后重新检查。',
-        'Sensitive information was detected. Remove it and check again.',
-      ],
-      VERSION_CONFLICT: [
-        '版本已存在，请修改版本或明确选择覆盖。',
-        'This version exists. Change the version or explicitly enable overwrite.',
-      ],
+      SOURCE_CHANGED: [messages.zh.issueSourceChanged, messages.en.issueSourceChanged],
+      AUTH_REQUIRED: [messages.zh.issueAuthRequired, messages.en.issueAuthRequired],
+      DRAFT_EXPIRED: [messages.zh.issueDraftExpired, messages.en.issueDraftExpired],
+      RESOURCE_NOT_FOUND: [messages.zh.issueResourceNotFound, messages.en.issueResourceNotFound],
+      SECRET_DETECTED: [messages.zh.issueSecretDetected, messages.en.issueSecretDetected],
+      VERSION_CONFLICT: [messages.zh.issueVersionConflict, messages.en.issueVersionConflict],
     };
     // Review lists (files, excluded, normalizations) carry plain strings: paths and notes.
     // Only map a string when it is one of the known codes; otherwise show it verbatim.
@@ -437,15 +456,15 @@ function AssetPublishDrawer({
     try {
       setLoginError('');
       setLoginBusy(true);
-      if (window.__JIUWEN_DESKTOP__ && !desktopOpen) throw new Error('桌面浏览器功能尚未就绪，请重试。');
-      if (!desktopOpen && !browserTab) throw new Error('浏览器阻止了授权窗口，请允许打开新标签页。');
+      if (window.__JIUWEN_DESKTOP__ && !desktopOpen) throw new Error(text('desktopBrowserNotReady'));
+      if (!desktopOpen && !browserTab) throw new Error(text('browserBlocked'));
       if (browserTab) browserTab.opener = null;
       const attempt = await beginHubOAuth(provider);
       if (cancelled()) return;
       if (desktopOpen) {
         const opened = await desktopOpen(attempt.authorize_url);
         if (cancelled()) return;
-        if (!opened) throw new Error('无法打开系统浏览器，请重试。');
+        if (!opened) throw new Error(text('cannotOpenBrowser'));
       } else if (browserTab) browserTab.location.href = attempt.authorize_url;
       loginAbort.current?.abort();
       const controller = new AbortController();
@@ -457,7 +476,7 @@ function AssetPublishDrawer({
       browserTab?.close();
       if (failure instanceof DOMException && failure.name === 'AbortError') return;
       if (generation !== loginGeneration.current) return;
-      setLoginError(failure instanceof Error ? failure.message : 'OAuth 登录不可用');
+      setLoginError(failure instanceof Error ? failure.message : text('oauthUnavailable'));
     } finally {
       if (generation === loginGeneration.current) {
         loginWindow.current = null;
@@ -516,10 +535,10 @@ function AssetPublishDrawer({
   const assetType = {
     skill: 'Skill',
     skillpack: 'SkillPack',
-    agent_template: zh ? '专家' : 'Expert',
-    agent_group: zh ? '专家团' : 'Expert group',
-    plugin: zh ? '插件' : 'Plugin',
-    mcp: zh ? '连接器' : 'Connector',
+    agent_template: zh ? text('assetTypeExpert') : 'Expert',
+    agent_group: zh ? text('assetTypeExpertGroup') : 'Expert group',
+    plugin: zh ? text('assetTypePlugin') : 'Plugin',
+    mcp: zh ? text('assetTypeConnector') : 'Connector',
   }[reference.kind];
   const packStageLabels: Record<string, MessageKey> = {
     publishing_members: 'packStagePublishingMembers',
